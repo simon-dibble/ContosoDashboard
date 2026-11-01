@@ -110,7 +110,7 @@ As an administrator, I want document activity and usage reports so that I can su
 - **FR-003**: The system MUST require a document title and one category from Project Documents, Team Resources, Personal Files, Reports, Presentations, or Other.
 - **FR-004**: The system MUST allow an optional description, project association, and user-defined tags.
 - **FR-005**: The system MUST record upload date/time, uploader, file size, and file type for each document; file type data MUST support values up to 255 characters.
-- **FR-006**: The system MUST scan files for malware before making them available and MUST reject files that do not pass the scan.
+- **FR-006**: The system MUST scan files for malware through a replaceable scanning contract before making them available, MUST use a deterministic training stub when operating offline, and MUST reject files that do not pass the scan.
 - **FR-007**: The system MUST store document content outside publicly accessible web content and MUST enforce authorization for every preview, download, search, edit, replace, share, and delete operation.
 - **FR-008**: The system MUST assign a unique, non-user-controlled storage name and MUST complete file persistence and metadata persistence as one recoverable operation without leaving an accessible orphan.
 - **FR-009**: The system MUST enforce role and relationship permissions: employees may manage their own documents and documents for assigned projects; team leads may manage documents for their team; project managers may manage documents for their projects; administrators may access all documents and audit reports.
@@ -120,11 +120,11 @@ As an administrator, I want document activity and usage reports so that I can su
 - **FR-013**: The system MUST allow authorized users to download documents and MUST provide in-browser preview for PDF and image files.
 - **FR-014**: The system MUST allow owners to edit metadata and replace the file, subject to the same validation, scanning, and authorization rules as an initial upload.
 - **FR-015**: The system MUST allow owners to permanently delete their documents after confirmation and allow project managers to delete documents associated with projects they manage.
-- **FR-016**: The system MUST allow owners to share documents with specifically selected users or eligible teams, notify recipients in-app, and list received documents in Shared with Me.
+- **FR-016**: The system MUST allow owners to share documents with specifically selected users or eligible teams defined by department membership or project-team membership, notify recipients in-app, and list received documents in Shared with Me.
 - **FR-017**: The system MUST allow authorized task viewers to attach existing documents or upload related documents from a task, associating the document with the task's project.
 - **FR-018**: The dashboard MUST show the current user's five most recent uploads and a document count.
 - **FR-019**: The system MUST notify relevant project members when a new document is added to their project and notify recipients when a document is shared with them.
-- **FR-020**: The system MUST record uploads, downloads, deletions, and share actions with actor, document, time, and outcome, and MUST restrict audit reports to administrators.
+- **FR-020**: The system MUST record uploads, downloads, deletions, and share actions with actor, document title and identifiers, time, and outcome, MUST retain those document details after permanent deletion, and MUST restrict audit reports to administrators.
 - **FR-021**: The system MUST provide administrator reports for most-uploaded document types, most-active uploaders, and document access patterns.
 - **FR-022**: The system MUST work without cloud services or network access for core training use and MUST preserve a replaceable storage boundary so a future production storage provider can be substituted without changing document behavior.
 - **FR-023**: The system MUST use integer document identifiers and store category values as text to remain compatible with existing application data conventions.
@@ -161,11 +161,12 @@ As an administrator, I want document activity and usage reports so that I can su
 - The initial release is web-only and does not include collaborative editing, version history/rollback, approval workflows, external document-system integrations, mobile clients, templates, storage quotas, or recoverable trash.
 - Permanent deletion is intentional; retaining an audit event does not retain the deleted file.
 - Local offline storage is available and is protected from direct public browsing. The storage boundary is replaceable for a later production migration without requiring cloud services in training.
-- Malware scanning is treated as a security gate: files are unavailable until a scan passes, and scan failures are reported without exposing file contents.
+- Malware scanning is treated as a security gate: files are unavailable until they pass a replaceable scanner contract; offline training uses a deterministic scanner stub and production deployments can substitute a real scanner.
+- Eligible team sharing includes recipients who belong to the document's department or associated project's project team.ailable until a scan passes, and scan failures are reported without exposing file contents.
 - Reports use the activity data available in the feature and do not require real-time analytics.
 
-### Unresolved Clarifications
+### Clarifications Resolved
 
-- **[NEEDS CLARIFICATION: Malware scanning provider and offline behavior]**: What scanner or approved local scanning behavior is available in the offline training environment? Options include (A) a locally available scanner with fail-closed behavior, (B) a pluggable scanner contract with a deterministic training stub and production scanner later, or (C) defer real scanning until a deployment-specific scanner is supplied.
-- **[NEEDS CLARIFICATION: Team sharing scope]**: Which existing group is an eligible “team” for sharing and authorization—department, project team, or another defined team membership? This changes who can receive and access a shared document.
-- **[NEEDS CLARIFICATION: Retention of audit records after permanent deletion]**: Should audit records retain the deleted document’s title and identifiers indefinitely, or should identifying metadata be minimized after deletion to meet a separate retention policy?
+- Malware scanning uses a replaceable scanner contract with a deterministic training stub for offline use and a production scanner as a later substitution.
+- Eligible team sharing includes department membership and project-team membership.
+- Audit records retain the deleted document's title and identifiers indefinitely after permanent deletion.

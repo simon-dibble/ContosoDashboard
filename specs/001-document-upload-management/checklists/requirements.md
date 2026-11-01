@@ -13,7 +13,7 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain — three high-impact ambiguities are explicitly recorded in the spec.
+- [x] No [NEEDS CLARIFICATION] markers remain — malware scanning, team sharing scope, and audit retention were resolved.
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
@@ -31,5 +31,5 @@
 
 ## Notes
 
-- Three clarification items remain intentionally unresolved and should be answered with `/speckit.clarify` before `/speckit.plan`.
+- Clarifications were resolved: offline malware scanning uses a replaceable deterministic training stub, team sharing includes department and project-team membership, and audit records retain deleted document titles and identifiers.
 - Stakeholder-specific implementation notes were translated into observable requirements and constraints; no application code or planning artifacts were created.
