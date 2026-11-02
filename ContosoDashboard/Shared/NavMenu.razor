@@ -9,6 +9,17 @@
 <div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
     <nav class="flex-column">
         <div class="nav-item px-3">
+            <NavLink class="nav-link" href="documents">
+                <span class="oi oi-folder" aria-hidden="true"></span> Documents
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="documents/shared">Shared with me</NavLink>
+        </div>
+        <AuthorizeView Roles="Administrator">
+            <div class="nav-item px-3"><NavLink class="nav-link" href="documents/audit">Document audit</NavLink></div>
+        </AuthorizeView>
+        <div class="nav-item px-3">
             <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
                 <span class="bi bi-house-door-fill" aria-hidden="true"></span> Dashboard
             </NavLink>

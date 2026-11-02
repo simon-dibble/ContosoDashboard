@@ -1,10 +1,12 @@
-@page "/tasks"
+﻿@page "/tasks"
 @using ContosoDashboard.Services
 @using ContosoDashboard.Models
 @using Microsoft.AspNetCore.Authorization
 @using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Forms
 @attribute [Authorize]
 @inject ITaskService TaskService
+@inject IDocumentService DocumentService
 @inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>My Tasks - ContosoDashboard</PageTitle>
@@ -126,6 +128,27 @@
                                 <button class="btn btn-sm btn-outline-primary" @onclick="() => ViewTaskDetails(task.TaskId)">
                                     <i class="bi bi-eye"></i>
                                 </button>
+                                @if (taskDocuments.TryGetValue(task.TaskId, out var attachedDocuments) && attachedDocuments.Count > 0)
+                                {
+                                    <ul class="list-unstyled mb-1 small">
+                                        @foreach (var attachedDocument in attachedDocuments)
+                                        {
+                                            <li><a href="@($"/documents/{attachedDocument.DocumentId}")">@attachedDocument.Title</a></li>
+                                        }
+                                    </ul>
+                                }
+                                <div class="input-group input-group-sm mt-1" style="max-width: 13rem">
+                                    <input class="form-control" type="number" placeholder="Document ID"
+                                           @bind="documentIds[task.TaskId]" />
+                                    <button class="btn btn-outline-secondary" @onclick="() => AttachDocumentAsync(task.TaskId)">Attach</button>
+                                </div>
+                                <div class="mt-1" style="max-width: 13rem">
+                                    <InputFile OnChange="@(args => UploadTaskDocumentAsync(task, args))" />
+                                </div>
+                                @if (attachmentMessages.TryGetValue(task.TaskId, out var attachmentMessage))
+                                {
+                                    <small class="text-muted">@attachmentMessage</small>
+                                }
                             </td>
                         </tr>
                     }
@@ -140,6 +163,9 @@
     private string filterStatus = "";
     private string filterPriority = "";
     private int currentUserId = 0;
+    private readonly Dictionary<int, int?> documentIds = new();
+    private readonly Dictionary<int, string> attachmentMessages = new();
+    private readonly Dictionary<int, List<Document>> taskDocuments = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -161,6 +187,12 @@
     private async Task LoadTasks()
     {
         tasks = await TaskService.GetUserTasksAsync(currentUserId);
+        taskDocuments.Clear();
+        if (tasks is not null)
+        {
+            foreach (var task in tasks)
+                taskDocuments[task.TaskId] = await DocumentService.GetTaskDocumentsAsync(task.TaskId);
+        }
     }
 
     private async Task ApplyFilters()
@@ -188,6 +220,45 @@
     private void ViewTaskDetails(int taskId)
     {
         // TODO: Navigate to task details or show modal
+    }
+
+    private async Task AttachDocumentAsync(int taskId)
+    {
+        if (!documentIds.TryGetValue(taskId, out var documentId) || !documentId.HasValue)
+        {
+            attachmentMessages[taskId] = "Enter a document ID.";
+            return;
+        }
+        var result = await DocumentService.AttachToTaskAsync(documentId.Value, taskId);
+        attachmentMessages[taskId] = result.Succeeded ? "Document attached." : result.Error ?? "The document could not be attached.";
+        if (result.Succeeded)
+            taskDocuments[taskId] = await DocumentService.GetTaskDocumentsAsync(taskId);
+    }
+
+    private async Task UploadTaskDocumentAsync(TaskItem task, InputFileChangeEventArgs args)
+    {
+        var file = args.File;
+        try
+        {
+            await using var stream = file.OpenReadStream(25 * 1024 * 1024);
+            var outcome = (await DocumentService.UploadAsync(file.Name, null, "General", null, task.ProjectId,
+                new[] { new DocumentUploadRequest(file.Name, file.ContentType, stream, file.Size) })).Single();
+            if (outcome.Succeeded && outcome.Document is not null)
+            {
+                var attachResult = await DocumentService.AttachToTaskAsync(outcome.Document.DocumentId, task.TaskId);
+                attachmentMessages[task.TaskId] = attachResult.Succeeded ? "Document uploaded and attached." : attachResult.Error ?? "Uploaded but could not be attached.";
+                if (attachResult.Succeeded)
+                    taskDocuments[task.TaskId] = await DocumentService.GetTaskDocumentsAsync(task.TaskId);
+            }
+            else
+            {
+                attachmentMessages[task.TaskId] = outcome.Error ?? "The document could not be uploaded.";
+            }
+        }
+        catch
+        {
+            attachmentMessages[task.TaskId] = "The document could not be uploaded.";
+        }
     }
 
     private string GetPriorityColor(TaskPriority priority)

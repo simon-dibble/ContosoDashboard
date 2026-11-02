@@ -1,0 +1,121 @@
+@page "/documents"
+@attribute [Authorize]
+@using Microsoft.AspNetCore.Components.Forms
+@inject IDocumentService DocumentService
+
+<PageTitle>Documents</PageTitle>
+<h1>My Documents</h1>
+<p class="text-muted">Training environment: document storage and scanning are local and mock-authenticated.</p>
+
+<form @onsubmit="UploadAsync" @onsubmit:preventDefault class="card card-body mb-4">
+    <div class="row g-3">
+        <div class="col-md-6"><label class="form-label">Title</label><InputText class="form-control" @bind-Value="title" /></div>
+        <div class="col-md-6"><label class="form-label">Category</label>
+            <InputSelect class="form-select" @bind-Value="category">
+                @foreach (var value in DocumentCategories.All) { <option value="@value">@value</option> }
+            </InputSelect>
+        </div>
+        <div class="col-12"><label class="form-label">Description</label><InputTextArea class="form-control" @bind-Value="description" /></div>
+        <div class="col-md-6"><label class="form-label">Project ID (optional)</label><InputNumber class="form-control" @bind-Value="projectId" /></div>
+        <div class="col-md-6"><label class="form-label">Tags (comma separated)</label><InputText class="form-control" @bind-Value="tags" /></div>
+        <div class="col-12"><InputFile OnChange="FilesSelected" multiple /></div>
+        <div class="col-12"><button class="btn btn-primary" type="submit" disabled="@(!selectedFiles.Any() || uploading)">@(uploading ? "Uploading…" : "Upload files")</button></div>
+    </div>
+</form>
+
+@if (!string.IsNullOrWhiteSpace(message)) { <div class="alert alert-info">@message</div> }
+@if (progress.Count > 0) {
+    <div class="mb-3" aria-live="polite">
+        @foreach (var item in progress) {
+            <div class="mb-2">
+                <div class="d-flex justify-content-between"><span>@item.Key.Name</span><span>@item.Value</span></div>
+                <div class="progress" role="progressbar" aria-label="@($"{item.Key.Name} upload progress")">
+                    <div class="progress-bar" style="@($"width: {(item.Value == "Uploaded" || item.Value == "Rejected" ? 100 : 50)}%")"></div>
+                </div>
+            </div>
+        }
+    </div>
+}
+@if (results.Count > 0) {
+    <ul class="list-group mb-3">
+        @foreach (var result in results) { <li class="list-group-item">@result.FileName: @(result.Succeeded ? "Uploaded" : result.Error)</li> }
+    </ul>
+}
+<div class="d-flex gap-2 mb-2">
+    <InputText class="form-control" placeholder="Search authorized documents" @bind-Value="search" @bind-Value:event="oninput" />
+    <select class="form-select" @bind="categoryFilter" style="max-width: 13rem">
+        <option value="">All categories</option>
+        @foreach (var value in DocumentCategories.All) { <option value="@value">@value</option> }
+    </select>
+    <InputDate class="form-control" @bind-Value="fromDate" />
+    <InputDate class="form-control" @bind-Value="toDate" />
+    <select class="form-select" @bind="sort" style="max-width: 12rem">
+        <option value="date">Newest</option><option value="title">Title</option><option value="category">Category</option><option value="size">Size</option>
+    </select>
+    <button class="btn btn-outline-secondary" @onclick="LoadAsync">Search</button>
+</div>
+@if (documents.Count == 0) { <p class="text-muted">No matching documents.</p> }
+else {
+    <table class="table">
+        <thead><tr><th>Title</th><th>Category</th><th>Project</th><th>Uploaded</th><th>Size</th><th>Type</th></tr></thead>
+        <tbody>
+        @foreach (var document in documents) {
+            <tr><td><a href="@($"/documents/{document.DocumentId}")">@document.Title</a></td><td>@document.Category</td><td>@document.Project?.Name</td><td>@document.UploadedAt.ToLocalTime()</td><td>@document.FileSize bytes</td><td>@document.FileType</td></tr>
+        }
+        </tbody>
+    </table>
+}
+
+@code {
+    private string? title, description, tags, search, message;
+    private string sort = "date", categoryFilter = "";
+    private DateTime? fromDate, toDate;
+    private string category = "Other";
+    private int? projectId;
+    private bool uploading;
+    private IReadOnlyList<IBrowserFile> selectedFiles = Array.Empty<IBrowserFile>();
+    private List<DocumentUploadResult> results = new();
+    private List<Document> documents = new();
+    private Dictionary<IBrowserFile, string> progress = new();
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+    private void FilesSelected(InputFileChangeEventArgs args) => selectedFiles = args.GetMultipleFiles(100);
+    private async Task UploadAsync()
+    {
+        uploading = true; message = null; results.Clear();
+        progress = selectedFiles.ToDictionary(file => file, _ => "Queued");
+        try
+        {
+            var parsedTags = string.IsNullOrWhiteSpace(tags)
+                ? Array.Empty<string>()
+                : tags.Split(',', StringSplitOptions.None);
+            foreach (var file in selectedFiles)
+            {
+                progress[file] = "Uploading";
+                await InvokeAsync(StateHasChanged);
+                await using var stream = file.OpenReadStream(25 * 1024 * 1024);
+                var outcome = (await DocumentService.UploadAsync(title, description, category,
+                    parsedTags, projectId,
+                    new[] { new DocumentUploadRequest(file.Name, file.ContentType, stream, file.Size) })).Single();
+                results.Add(outcome);
+                progress[file] = outcome.Succeeded ? "Uploaded" : "Rejected";
+                await InvokeAsync(StateHasChanged);
+            }
+            message = results.All(r => r.Succeeded) ? "Upload complete." : "Some files were rejected; review each result.";
+            await LoadAsync();
+        }
+        catch { message = "The upload could not be completed. No private storage details are exposed."; }
+        finally { uploading = false; }
+    }
+    private async Task LoadAsync()
+    {
+        message = null;
+        if (fromDate.HasValue && toDate.HasValue && fromDate > toDate)
+        {
+            message = "The start date must be on or before the end date.";
+            documents.Clear();
+            return;
+        }
+        documents = await DocumentService.ListAsync(search, categoryFilter, from: fromDate, to: toDate, sort: sort);
+    }
+}

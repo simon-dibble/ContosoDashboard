@@ -1,0 +1,17 @@
+@page "/documents/shared"
+@attribute [Authorize]
+@inject IDocumentService DocumentService
+
+<PageTitle>Shared with me</PageTitle>
+<h1>Shared with me</h1>
+<p class="text-muted">Only active, scan-passed shares are shown.</p>
+@if (documents.Count == 0) { <p class="text-muted">No documents have been shared with you.</p> }
+else { <ul class="list-group">@foreach (var document in documents) {
+    <li class="list-group-item"><a href="@($"/documents/{document.DocumentId}")">@document.Title</a>
+        <span class="text-muted"> · @document.OriginalFileName</span></li>
+}</ul> }
+
+@code {
+    private List<Document> documents = new();
+    protected override async Task OnInitializedAsync() => documents = await DocumentService.GetSharedWithMeAsync();
+}

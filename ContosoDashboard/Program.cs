@@ -43,6 +43,13 @@ builder.Services.AddScoped<ITaskService, TaskService>();
 builder.Services.AddScoped<IProjectService, ProjectService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
+builder.Services.Configure<DocumentStorageOptions>(builder.Configuration.GetSection("DocumentStorage"));
+builder.Services.AddSingleton<IFileStorage, LocalFileStorage>();
+builder.Services.AddScoped<IMalwareScanner, DeterministicMalwareScanner>();
+builder.Services.AddScoped<IDocumentValidationService, DocumentValidationService>();
+builder.Services.AddScoped<IDocumentAuthorizationService, DocumentAuthorizationService>();
+builder.Services.AddScoped<IDocumentService, DocumentService>();
+builder.Services.AddScoped<IDocumentAuditService, DocumentAuditService>();
 
 // Add HttpContextAccessor for accessing user claims
 builder.Services.AddHttpContextAccessor();
@@ -56,12 +63,13 @@ using (var scope = app.Services.CreateScope())
     try
     {
         var context = services.GetRequiredService<ApplicationDbContext>();
-        context.Database.EnsureCreated(); // For development - use migrations in production
+        context.Database.Migrate();
     }
     catch (Exception ex)
     {
         var logger = services.GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, "An error occurred creating the database.");
+        logger.LogError(ex, "Database migration failed. Follow the documented backup and migration procedure.");
+        throw;
     }
 }
 
@@ -106,6 +114,13 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapBlazorHub();
+app.MapGet("/documents/{documentId:int}/download", async (int documentId, IDocumentService service, CancellationToken cancellationToken) =>
+{
+    var file = await service.OpenReadAsync(documentId, cancellationToken);
+    return file is null
+        ? Results.NotFound()
+        : Results.File(file.Content, file.Document.FileType, file.Document.OriginalFileName, enableRangeProcessing: true);
+}).RequireAuthorization();
 app.MapFallbackToPage("/_Host");
 
 app.Run();

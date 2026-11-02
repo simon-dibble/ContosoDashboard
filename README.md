@@ -53,6 +53,28 @@ This application includes a **mock authentication system** designed for training
 
 ## Overview
 
+## Document management migration and private storage
+
+Document uploads use the named EF migration `AddDocumentManagement` and a private local
+storage root configured by `DocumentStorage:RootPath` (the default is under `%LOCALAPPDATA%`,
+never `wwwroot`). The maximum file size is 25 MiB. Supported types are PDF, Word, Excel,
+PowerPoint, text, JPEG, and PNG. The offline scanner is a deterministic **training-only**
+gate and is not an antivirus product; replace `IMalwareScanner` for production.
+
+Before upgrading an existing training database, take a LocalDB backup. This repository
+started with `EnsureCreated`, so an existing database without `__EFMigrationsHistory` needs
+to be backed up and recreated (or manually baselined by an instructor) before running
+`dotnet ef database update`; the generated migration is a complete baseline plus document
+tables and cannot be applied over an untracked `EnsureCreated` schema. Fresh databases are
+created with `dotnet ef database update`, preserving the existing seed users, projects,
+tasks, members, and notifications. Roll back by restoring the backup; do not mix
+`EnsureCreated` and migrations for the same database.
+
+Core document behavior is offline-first. `IFileStorage` and `IMalwareScanner` are replaceable
+seams for a future production object store and scanner, without adding credentials or network
+requirements to this training application. Uploads are authorization-checked server-side,
+stored under opaque names, and never expose filesystem paths.
+
 ContosoDashboard is built using ASP.NET Core 9.0 with Blazor Server and provides a centralized platform for:
 
 - Task management and tracking
@@ -364,7 +386,9 @@ sqllocaldb delete mssqllocaldb
 - Delete database: `dotnet ef database drop --force`
 - Recreate: Run application (auto-creates with seed data)
 
-**Note**: The application uses `EnsureCreated()` for development, so just running `dotnet run` will automatically create and seed the database if it doesn't exist.
+**Note**: The application uses `Database.Migrate()` at startup, so a fresh database is
+automatically migrated and seeded. An older database created with `EnsureCreated()` must follow
+the backup/recreate or instructor-managed baseline procedure described above.
 
 ## Security Concepts and Patterns
 
@@ -401,3 +425,91 @@ The application demonstrates good coding practices:
 - Entity Framework Core with eager loading (`.Include()`) to prevent N+1 query problems
 - Clean separation of concerns (Models, Services, Data, Pages)
 - Dependency injection for loose coupling and testability
+
+## Document-management validation (T052, this pass)
+
+This updates/replaces the earlier 2026-11-02 validation note and reflects the state after
+completing the remaining feasible T026/T030-T033/T037/T041-T045/T048-T052 tasks from
+`specs/001-document-upload-management/tasks.md`.
+
+### Build and automated tests
+
+- `dotnet build ContosoDashboard/ContosoDashboard.csproj` - succeeded (only four
+  pre-existing nullable-reference warnings in `TaskService.cs`/`DocumentService.cs`; no errors).
+- `dotnet test ContosoDashboard.Tests/ContosoDashboard.Tests.csproj` - **98 tests passed, 0
+  failed**, including new coverage added in this pass for stream access (T026), the browse/
+  security UI fixture (T030), edit/replacement (T031), confirmed deletion (T033), the US3
+  component fixture (T037), task upload/attach + document display (T041), project-document
+  notifications (T042), the task/dashboard component fixture (T043), append-only audit
+  recording for upload/download/share/delete (T044), aggregate audit reporting by file type
+  and uploader (T045), the administrator audit UI fixture (T048), true concurrent
+  upload/replace races (T049), a full IDOR authorization matrix across every
+  `DocumentOperation` and role (T050, new `ContosoDashboard.Tests/Security/DocumentIdorSecurityTests.cs`),
+  and 25 MiB upload / PDF-image preview performance bounds (T051).
+
+### Fresh-database migration (never touches the existing database)
+
+- `dotnet ef database update` was run with `ConnectionStrings__DefaultConnection` pointed at a
+  **brand-new** LocalDB database, `ContosoDashboard_T052Validation` - the existing
+  `ContosoDashboard` database was never opened or modified by this validation pass.
+- The migration applied cleanly: all `Document*` tables (`Documents`, `DocumentShares`,
+  `DocumentActivities`, `DocumentTaskAssociations`) and their indexes were created, and the
+  `__EFMigrationsHistory` table recorded the `AddDocumentManagement` migration.
+- A clean-seed check confirmed the mock `Users`/`Projects` seed data (`HasData`) was applied
+  by the migration itself: 4 users and 1 project were present immediately after `database update`,
+  with no separate seeding step required.
+- `dotnet run` was started against that same fresh database (`ASPNETCORE_URLS` + connection
+  string overridden via environment variables) and `/` and `/login` both returned HTTP 200,
+  confirming the application starts and serves pages against a freshly migrated database.
+
+### Manual/offline checks that could not be completed in this environment
+
+The following items from `quickstart.md`'s functional-acceptance and authorization/IDOR
+validation sections require a real browser and/or human judgement and were **not** performed
+in this automated pass - they remain open manual follow-ups:
+
+- Browser-driven upload progress UI, drag/drop, and visual preview rendering (PDF iframe /
+  image `<img>`) were **not** visually verified; only their presence in markup and their
+  service-layer behavior are covered by automated tests.
+- **Offline/no-network run**: the application itself needs no network access (local SQL
+  Server LocalDB, local private file storage, and the deterministic in-process malware
+  scanner), but `Pages/_Host.cshtml` and `Pages/Login.cshtml` load Bootstrap CSS/JS and
+  Bootstrap Icons from the `cdn.jsdelivr.net` CDN. In a fully offline environment the pages
+  will still render and function (forms/buttons work), but styling and icon glyphs will be
+  missing until those assets are vendored locally. This is a pre-existing condition of the
+  base application, not something introduced by the document-management feature, and is
+  recorded here rather than silently fixed because vendoring front-end assets is outside this
+  feature's scope.
+- A full manual walk-through of every acceptance bullet in `quickstart.md` (e.g., clicking
+  through the UI as each seeded role, dragging files, confirming toast/notification text) was
+  not performed; this requires a human (or browser-automation) session and is left for a
+  follow-up manual QA pass.
+- Dependency/build-output security scanning tools (e.g., `dotnet list package
+  --vulnerable`, container or SAST scanners) were not available/configured in this sandbox and
+  were not run; only the automated test suite and the source-level authorization review below
+  were performed.
+
+### Known, intentionally-unchecked task
+
+- **T032** (`DocumentSharingTests.cs`) is left unchecked in `tasks.md`. Automated tests exist
+  and pass for everything the production code actually implements (selected-user sharing with
+  deduplication, revoke, Shared with Me active/revoked filtering, and owner/manager-only
+  authorization). Two parts of T032's acceptance criteria have **no corresponding production
+  implementation** anywhere in the codebase - automatic department/project-team membership
+  expansion when sharing, and per-user notification recipients/preferences - so they cannot be
+  tested honestly without first building new (out-of-scope) domain features. See the
+  explanatory note on T032 in `tasks.md` and the comment at the top of
+  `DocumentSharingTests.cs`.
+
+The document feature remains offline-first: local private storage, the deterministic
+training scanner, and replaceable `IFileStorage`/`IMalwareScanner` seams require no
+network or cloud credentials for their actual logic (only the CDN-hosted front-end styling
+noted above is network-dependent). An existing `EnsureCreated` database must still be
+backed up and recreated/baselined by an instructor before migration (see the migration
+section above).
+
+The implementation review confirmed that document pages are `[Authorize]` protected,
+document services authorize before loading identifiers, and UI/logging code does not
+render storage names, filesystem paths, uploaded bytes, or credentials. The audit page
+also applies an administrator role boundary and repeats the service authorization check.
+This is a source review only; it is not a substitute for a penetration test.

@@ -1,0 +1,97 @@
+﻿@page "/documents/{DocumentId:int}"
+@attribute [Authorize]
+@using Microsoft.AspNetCore.Components.Forms
+@inject IDocumentService DocumentService
+@inject NavigationManager Navigation
+
+<PageTitle>Document details</PageTitle>
+@if (document is null) { <p class="text-muted">Document not found.</p> }
+else {
+    <h1>@document.Title</h1>
+    <dl><dt>Description</dt><dd>@document.Description</dd><dt>Category</dt><dd>@document.Category</dd>
+        <dt>File</dt><dd>@document.OriginalFileName (@document.FileSize bytes, @document.FileType)</dd>
+        <dt>Uploaded</dt><dd>@document.UploadedAt.ToLocalTime()</dd></dl>
+    @if (!string.IsNullOrWhiteSpace(message)) { <div class="alert alert-info">@message</div> }
+    @if (!string.IsNullOrWhiteSpace(previewUrl)) {
+        @if (document.FileType == "application/pdf") { <iframe title="PDF preview" src="@previewUrl" class="w-100" style="height:35rem"></iframe> }
+        else if (document.FileType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)) { <img src="@previewUrl" alt="@document.OriginalFileName" class="img-fluid" /> }
+    }
+    <div class="d-flex gap-2 mb-4">
+        <button class="btn btn-outline-primary" @onclick="PreviewAsync">Preview</button>
+        <a class="btn btn-primary" href="@($"/documents/{DocumentId}/download")">Download</a>
+        <button class="btn btn-outline-danger" @onclick="DeleteAsync">Delete</button>
+    </div>
+    <EditForm Model="editModel" OnValidSubmit="SaveMetadataAsync" class="card card-body mb-3">
+        <h2 class="h5">Edit metadata</h2>
+        <InputText class="form-control mb-2" @bind-Value="editModel.Title" />
+        <InputTextArea class="form-control mb-2" @bind-Value="editModel.Description" />
+        <InputSelect class="form-select mb-2" @bind-Value="editModel.Category">
+            @foreach (var value in DocumentCategories.All) { <option value="@value">@value</option> }
+        </InputSelect>
+        <InputText class="form-control mb-2" @bind-Value="editModel.Tags" />
+        <button class="btn btn-secondary" type="submit">Save metadata</button>
+    </EditForm>
+    <EditForm Model="replacementFormModel" OnValidSubmit="ReplaceAsync" class="card card-body mb-3">
+        <h2 class="h5">Replace file</h2>
+        <InputFile OnChange="ReplacementSelected" />
+        <button class="btn btn-secondary mt-2" type="submit" disabled="@(replacement is null)">Replace</button>
+    </EditForm>
+    <div class="card card-body">
+        <h2 class="h5">Share</h2>
+        <InputText class="form-control mb-2" @bind-Value="shareUserIds" placeholder="User IDs, comma separated" />
+        <button class="btn btn-secondary" @onclick="ShareAsync">Share</button>
+    </div>
+}
+@code {
+    [Parameter] public int DocumentId { get; set; }
+    private Document? document;
+    private string? message, previewUrl, shareUserIds;
+    private IBrowserFile? replacement;
+    private readonly object replacementFormModel = new();
+    private MetadataModel editModel = new();
+    protected override async Task OnParametersSetAsync()
+    {
+        document = await DocumentService.GetAsync(DocumentId);
+        if (document is not null) editModel = new() { Title = document.Title, Description = document.Description, Category = document.Category, Tags = document.Tags };
+    }
+    private void ReplacementSelected(InputFileChangeEventArgs args) => replacement = args.File;
+    private async Task PreviewAsync()
+    {
+        if (document is null || (document.FileType != "application/pdf" && !document.FileType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)))
+        { message = "Preview is not available for this file type. Use Download instead."; return; }
+        var result = await DocumentService.OpenReadAsync(DocumentId);
+        if (result is null) { message = "The file is not available."; return; }
+        await using var content = result.Content;
+        using var memory = new MemoryStream();
+        await content.CopyToAsync(memory);
+        previewUrl = $"data:{document.FileType};base64,{Convert.ToBase64String(memory.ToArray())}";
+    }
+    private async Task SaveMetadataAsync()
+    {
+        var updated = await DocumentService.UpdateMetadataAsync(DocumentId, editModel.Title, editModel.Description, editModel.Category, editModel.Tags.Split(',', StringSplitOptions.RemoveEmptyEntries));
+        message = updated is null ? "Metadata could not be updated." : "Metadata saved.";
+        if (updated is not null) document = updated;
+    }
+    private async Task ReplaceAsync()
+    {
+        if (replacement is null) return;
+        await using var stream = replacement.OpenReadStream(25 * 1024 * 1024);
+        var result = await DocumentService.ReplaceAsync(DocumentId, new(replacement.Name, replacement.ContentType, stream, replacement.Size));
+        message = result.Succeeded ? "File replaced." : result.Error;
+        if (result.Succeeded) document = await DocumentService.GetAsync(DocumentId);
+    }
+    private async Task ShareAsync()
+    {
+        var ids = (shareUserIds ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries).Select(x => int.TryParse(x.Trim(), out var id) ? id : 0).Where(x => x > 0);
+        var shares = await DocumentService.ShareAsync(DocumentId, new(ids));
+        message = shares.Count == 0 ? "No shares were created." : $"Shared with {shares.Count} user(s).";
+    }
+    private async Task DeleteAsync()
+    {
+        var result = await DocumentService.DeleteAsync(DocumentId, true);
+        if (result.Succeeded) Navigation.NavigateTo("/documents");
+        else message = result.Error;
+    }
+    private sealed class MetadataModel { public string Title { get; set; } = ""; public string? Description { get; set; } public string Category { get; set; } = "Other"; public string Tags { get; set; } = ""; }
+}
+

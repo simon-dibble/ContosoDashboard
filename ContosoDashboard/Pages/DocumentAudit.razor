@@ -1,0 +1,29 @@
+﻿@page "/documents/audit"
+@attribute [Authorize(Roles = "Administrator")]
+@inject IDocumentAuditService AuditService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Document audit</PageTitle>
+<h1>Document audit</h1>
+@if (report is null) { <p class="text-muted">Audit data is unavailable or access was denied.</p> }
+else {
+    <h2>Activity</h2>
+    <table class="table"><thead><tr><th>When</th><th>Action</th><th>Outcome</th><th>Document</th><th>Actor</th></tr></thead><tbody>
+    @foreach (var activity in report.Activities) { <tr><td>@activity.OccurredAt.ToLocalTime()</td><td>@activity.Action</td><td>@activity.Outcome</td><td>@activity.DocumentTitleSnapshot</td><td>@activity.ActorUser?.DisplayName</td></tr> }
+    </tbody></table>
+    <h2>Aggregates</h2>
+    <ul>@foreach (var item in report.Aggregates) { <li>@item.Action / @item.Outcome: @item.Count</li> }</ul>
+    <h2>Most uploaded file types</h2>
+    <ul>@foreach (var item in report.MostUploadedFileTypes) { <li>@item.FileType: @item.Count</li> }</ul>
+    <h2>Most active uploaders</h2>
+    <ul>@foreach (var item in report.MostActiveUploaders) { <li>@(item.ActorDisplayName ?? $"User #{item.ActorUserId}"): @item.Count</li> }</ul>
+}
+@code {
+    private DocumentAuditReport? report;
+    protected override async Task OnInitializedAsync() {
+        var state = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var claim = state.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+        if (int.TryParse(claim?.Value, out var userId)) report = await AuditService.GetReportAsync(userId);
+    }
+}
+
