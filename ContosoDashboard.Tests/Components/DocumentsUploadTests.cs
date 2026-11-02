@@ -23,6 +23,19 @@ public class DocumentsUploadTests
     }
 
     [Fact]
+    public void Search_input_accepts_each_typed_character()
+    {
+        using var context = new TestContext();
+        context.Services.AddSingleton<IDocumentService>(new StubDocumentService());
+        var component = context.RenderComponent<ContosoDashboard.Pages.Documents>();
+        var search = component.Find("input[placeholder='Search authorized documents']");
+
+        search.Input("U");
+
+        Assert.Equal("U", search.GetAttribute("value"));
+    }
+
+    [Fact]
     public void Documents_page_is_present_and_route_protected()
     {
         var page = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "ContosoDashboard", "Pages", "Documents.razor"));
@@ -115,4 +128,3 @@ public class DocumentsUploadTests
             Task.FromResult(new List<Document>());
     }
 }
-

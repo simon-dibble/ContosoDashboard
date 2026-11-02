@@ -42,7 +42,7 @@
     </ul>
 }
 <div class="d-flex gap-2 mb-2">
-    <InputText class="form-control" placeholder="Search authorized documents" @bind-Value="search" @bind-Value:event="oninput" />
+    <input class="form-control" placeholder="Search authorized documents" @bind="search" @bind:event="oninput" />
     <select class="form-select" @bind="categoryFilter" style="max-width: 13rem">
         <option value="">All categories</option>
         @foreach (var value in DocumentCategories.All) { <option value="@value">@value</option> }
